@@ -15,6 +15,7 @@ import { PoseLabPage } from '@/pages/PoseLabPage'
 import { SessionPage } from '@/pages/SessionPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { TvPage } from '@/pages/TvPage'
+import { WorkoutEditorPage } from '@/pages/WorkoutEditorPage'
 import { WorkoutsPage } from '@/pages/WorkoutsPage'
 
 export function App() {
@@ -28,6 +29,8 @@ export function App() {
         <Route element={<MobileShell />}>
           <Route index element={<HomePage />} />
           <Route path="workouts" element={<WorkoutsPage />} />
+          <Route path="workouts/new" element={<WorkoutEditorPage />} />
+          <Route path="workouts/:id/edit" element={<WorkoutEditorPage />} />
           <Route path="locker" element={<LockerPage />} />
           <Route path="history" element={<HistoryPage />} />
           <Route path="session" element={<SessionPage />} />
