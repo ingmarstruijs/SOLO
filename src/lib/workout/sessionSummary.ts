@@ -1,0 +1,303 @@
+import type { ActiveSession } from '@/types/workout'
+import { formatElapsedSeconds } from '@/hooks/useElapsedTimer'
+import { getPhaseInfo } from '@/lib/workout/workoutStructure'
+
+export type ExerciseTrend = 'faster' | 'slower' | 'stable'
+
+export type SessionSummaryExercise = {
+  name: string
+  durationSeconds: number
+  durationsBySet: number[]
+  avgPerSet: number
+  trend: ExerciseTrend
+  trendPercent: number
+}
+
+export type SessionSummarySet = {
+  setNumber: number
+  label: string
+  durationSeconds: number
+  exercises: { name: string; durationSeconds: number }[]
+}
+
+export type SessionSummaryStats = {
+  phaseLabel: string
+  totalSets: number
+  totalExercisesCompleted: number
+  avgSetDurationSeconds: number
+  avgExercisePerSetSeconds: number
+  fastestSet: { setNumber: number; seconds: number } | null
+  slowestSet: { setNumber: number; seconds: number } | null
+  fastestExercise: { name: string; avgSeconds: number } | null
+  slowestExercise: { name: string; avgSeconds: number } | null
+  paceChangePercent: number
+  paceLabel: string
+}
+
+export type SessionSummary = {
+  workoutName: string
+  exercises: SessionSummaryExercise[]
+  sets: SessionSummarySet[]
+  stats: SessionSummaryStats
+  totalDurationSeconds: number
+  startedAt: string
+  completedAt: string
+}
+
+const SUMMARY_KEY = 'solo-last-summary'
+
+export function formatDuration(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  if (h > 0) return `${h}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+  return formatElapsedSeconds(seconds)
+}
+
+function computeTrend(first: number, last: number): { trend: ExerciseTrend; trendPercent: number } {
+  if (first <= 0 || last <= 0) return { trend: 'stable', trendPercent: 0 }
+  const pct = Math.round(((last - first) / first) * 100)
+  if (pct >= 10) return { trend: 'slower', trendPercent: pct }
+  if (pct <= -10) return { trend: 'faster', trendPercent: pct }
+  return { trend: 'stable', trendPercent: pct }
+}
+
+function finalizeSetWallDurations(session: ActiveSession): Record<number, number> {
+  const allDone = session.completedExerciseIds.length === session.workout.exercises.length
+  if (!allDone) return { ...(session.setWallDurations ?? {}) }
+
+  const existing = session.setWallDurations ?? {}
+  if (existing[session.currentSet] != null) return existing
+
+  const start = session.currentSetStartedAt ?? session.startedAt
+  const wall = Math.max(1, Math.floor((Date.now() - new Date(start).getTime()) / 1000))
+  return { ...existing, [session.currentSet]: wall }
+}
+
+export function buildSessionSummary(session: ActiveSession): SessionSummary {
+  const phase = getPhaseInfo(session.workout)
+  const bySet = session.exerciseDurationsBySet ?? {}
+  const setWallDurations = finalizeSetWallDurations(session)
+
+  const setNumbers = [
+    ...new Set([
+      ...Object.keys(setWallDurations).map(Number),
+      ...Object.keys(bySet).map(Number),
+      session.currentSet,
+    ]),
+  ]
+    .filter((n) => n > 0)
+    .sort((a, b) => a - b)
+
+  const sets: SessionSummarySet[] = setNumbers.map((num) => {
+    const exerciseRows = session.workout.exercises.map((ex) => ({
+      name: ex.name,
+      durationSeconds: bySet[num]?.[ex.id] ?? 0,
+    }))
+    const exerciseSum = exerciseRows.reduce((sum, row) => sum + row.durationSeconds, 0)
+    return {
+      setNumber: num,
+      label: `${phase.label} ${num}`,
+      durationSeconds: setWallDurations[num] ?? exerciseSum,
+      exercises: exerciseRows,
+    }
+  })
+
+  const exercises: SessionSummaryExercise[] = session.workout.exercises.map((ex) => {
+    const durationsBySet = setNumbers.map((n) => bySet[n]?.[ex.id] ?? 0)
+    const total = durationsBySet.reduce((sum, value) => sum + value, 0)
+    const measured = durationsBySet.filter((value) => value > 0)
+    const avgPerSet = measured.length > 0 ? Math.round(total / measured.length) : 0
+    const first = durationsBySet.find((value) => value > 0) ?? 0
+    const last = [...durationsBySet].reverse().find((value) => value > 0) ?? 0
+    const { trend, trendPercent } =
+      setNumbers.length > 1 ? computeTrend(first, last) : { trend: 'stable' as const, trendPercent: 0 }
+
+    return {
+      name: ex.name,
+      durationSeconds: session.exerciseDurations?.[ex.id] ?? total,
+      durationsBySet,
+      avgPerSet,
+      trend,
+      trendPercent,
+    }
+  })
+
+  const setDurations = sets.map((set) => set.durationSeconds).filter((value) => value > 0)
+  const avgSetDurationSeconds =
+    setDurations.length > 0
+      ? Math.round(setDurations.reduce((sum, value) => sum + value, 0) / setDurations.length)
+      : 0
+
+  const exerciseAvgs = exercises
+    .filter((ex) => ex.avgPerSet > 0)
+    .map((ex) => ({ name: ex.name, avgSeconds: ex.avgPerSet }))
+
+  const fastestSet =
+    setDurations.length > 0
+      ? sets.reduce(
+          (best, set) =>
+            set.durationSeconds > 0 && set.durationSeconds < best.seconds
+              ? { setNumber: set.setNumber, seconds: set.durationSeconds }
+              : best,
+          { setNumber: sets[0]?.setNumber ?? 1, seconds: setDurations[0] ?? 0 },
+        )
+      : null
+
+  const slowestSet =
+    setDurations.length > 0
+      ? sets.reduce(
+          (best, set) =>
+            set.durationSeconds > best.seconds
+              ? { setNumber: set.setNumber, seconds: set.durationSeconds }
+              : best,
+          { setNumber: sets[0]?.setNumber ?? 1, seconds: 0 },
+        )
+      : null
+
+  const fastestExercise =
+    exerciseAvgs.length > 0
+      ? exerciseAvgs.reduce((best, row) => (row.avgSeconds < best.avgSeconds ? row : best))
+      : null
+
+  const slowestExercise =
+    exerciseAvgs.length > 0
+      ? exerciseAvgs.reduce((best, row) => (row.avgSeconds > best.avgSeconds ? row : best))
+      : null
+
+  const firstSetAvg =
+    sets.length > 0
+      ? Math.round(
+          sets[0].exercises.reduce((sum, row) => sum + row.durationSeconds, 0) /
+            Math.max(1, sets[0].exercises.filter((row) => row.durationSeconds > 0).length),
+        )
+      : 0
+  const lastSetAvg =
+    sets.length > 0
+      ? Math.round(
+          sets[sets.length - 1].exercises.reduce((sum, row) => sum + row.durationSeconds, 0) /
+            Math.max(
+              1,
+              sets[sets.length - 1].exercises.filter((row) => row.durationSeconds > 0).length,
+            ),
+        )
+      : 0
+  const paceChangePercent =
+    firstSetAvg > 0 && lastSetAvg > 0
+      ? Math.round(((lastSetAvg - firstSetAvg) / firstSetAvg) * 100)
+      : 0
+
+  let paceLabel = 'Stabiel tempo'
+  if (paceChangePercent >= 10) paceLabel = `${paceChangePercent}% langzamer in latere sets`
+  else if (paceChangePercent <= -10) paceLabel = `${Math.abs(paceChangePercent)}% sneller in latere sets`
+
+  const totalDurationSeconds = Math.max(
+    1,
+    Math.floor((Date.now() - new Date(session.startedAt).getTime()) / 1000),
+  )
+
+  const allExerciseTimes = exercises.flatMap((ex) => ex.durationsBySet).filter((value) => value > 0)
+  const avgExercisePerSetSeconds =
+    allExerciseTimes.length > 0
+      ? Math.round(allExerciseTimes.reduce((sum, value) => sum + value, 0) / allExerciseTimes.length)
+      : 0
+
+  return {
+    workoutName: session.workout.name,
+    exercises,
+    sets,
+    stats: {
+      phaseLabel: phase.label,
+      totalSets: sets.length,
+      totalExercisesCompleted: allExerciseTimes.length,
+      avgSetDurationSeconds,
+      avgExercisePerSetSeconds,
+      fastestSet,
+      slowestSet,
+      fastestExercise,
+      slowestExercise,
+      paceChangePercent,
+      paceLabel,
+    },
+    totalDurationSeconds,
+    startedAt: session.startedAt,
+    completedAt: new Date().toISOString(),
+  }
+}
+
+export function saveLastSummary(summary: SessionSummary, hasNextWorkout: boolean): void {
+  sessionStorage.setItem(
+    SUMMARY_KEY,
+    JSON.stringify({ summary, hasNextWorkout, savedAt: new Date().toISOString() }),
+  )
+}
+
+export function normalizeSummary(raw: Partial<SessionSummary> & { workoutName: string }): SessionSummary {
+  if (raw.stats && raw.sets && raw.exercises?.every((ex) => 'durationsBySet' in ex)) {
+    return raw as SessionSummary
+  }
+
+  const exercises: SessionSummaryExercise[] = (raw.exercises ?? []).map((ex) => {
+    const durationSeconds = 'durationSeconds' in ex ? ex.durationSeconds : 0
+    return {
+    name: ex.name,
+    durationSeconds,
+    durationsBySet: 'durationsBySet' in ex ? ex.durationsBySet : [],
+    avgPerSet: 'avgPerSet' in ex ? ex.avgPerSet : durationSeconds,
+    trend: 'trend' in ex ? ex.trend : 'stable',
+    trendPercent: 'trendPercent' in ex ? ex.trendPercent : 0,
+  }
+  })
+
+  return {
+    workoutName: raw.workoutName,
+    exercises,
+    sets: raw.sets ?? [],
+    stats: raw.stats ?? {
+      phaseLabel: 'Set',
+      totalSets: raw.sets?.length ?? 0,
+      totalExercisesCompleted: exercises.length,
+      avgSetDurationSeconds: 0,
+      avgExercisePerSetSeconds:
+        exercises.length > 0
+          ? Math.round(
+              exercises.reduce((sum, ex) => sum + ex.durationSeconds, 0) / exercises.length,
+            )
+          : 0,
+      fastestSet: null,
+      slowestSet: null,
+      fastestExercise: null,
+      slowestExercise: null,
+      paceChangePercent: 0,
+      paceLabel: 'Stabiel tempo',
+    },
+    totalDurationSeconds: raw.totalDurationSeconds ?? 0,
+    startedAt: raw.startedAt ?? new Date().toISOString(),
+    completedAt: raw.completedAt ?? new Date().toISOString(),
+  }
+}
+
+export function loadLastSummary(): {
+  summary: SessionSummary
+  hasNextWorkout: boolean
+} | null {
+  try {
+    const raw = sessionStorage.getItem(SUMMARY_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as {
+      summary: SessionSummary
+      hasNextWorkout: boolean
+    }
+    if (!parsed.summary?.workoutName) return null
+    return {
+      hasNextWorkout: parsed.hasNextWorkout,
+      summary: normalizeSummary(parsed.summary),
+    }
+  } catch {
+    return null
+  }
+}
+
+export function clearLastSummary(): void {
+  sessionStorage.removeItem(SUMMARY_KEY)
+}

@@ -1,18 +1,17 @@
-import { Dumbbell } from 'lucide-react'
+import { CheckSquare, Dumbbell, Play, Square } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import type { WorkoutFilters, WorkoutTemplate } from '@/types/workout'
+import type { WorkoutFilters } from '@/types/workout'
 import { filterWorkouts } from '@/lib/workout/filters'
 import { parseFitFile } from '@/lib/workout/fitImport'
-import { planOverloadTargets } from '@/lib/workout/overloadPlanner'
 import { useLocker } from '@/hooks/useLocker'
 import { useRecoveryScore } from '@/hooks/useRecoveryScore'
 import { useWorkouts } from '@/hooks/useWorkouts'
-import { WorkoutPrepFlow } from '@/components/workout/WorkoutPrepFlow'
 import { WgerBrowser } from '@/components/workout/WgerBrowser'
 import { WorkoutCard } from '@/components/workout/WorkoutCard'
+import { WorkoutCompactToolbar } from '@/components/workout/WorkoutCompactToolbar'
 import { WorkoutFiltersPanel } from '@/components/workout/WorkoutFiltersPanel'
-import { WorkoutToolbar } from '@/components/workout/WorkoutToolbar'
+import { cn } from '@/lib/cn'
 
 const DEFAULT_FILTERS: WorkoutFilters = {
   lockerOnly: false,
@@ -20,24 +19,28 @@ const DEFAULT_FILTERS: WorkoutFilters = {
   minRecovery: 50,
 }
 
+function countActiveFilters(filters: WorkoutFilters): number {
+  let n = 0
+  if (filters.maxMinutes != null) n++
+  if (filters.lockerOnly) n++
+  if (filters.favoritesOnly) n++
+  return n
+}
+
 export function WorkoutsPage() {
   const navigate = useNavigate()
-  const { workouts, add, toggleFav, exportData, importData } = useWorkouts()
+  const { workouts, add, remove, toggleFav, exportData, importData } = useWorkouts()
   const { items: lockerItems } = useLocker()
   const { score: recoveryScore } = useRecoveryScore()
   const [filters, setFilters] = useState<WorkoutFilters>(DEFAULT_FILTERS)
-  const [selected, setSelected] = useState<WorkoutTemplate | null>(null)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [multiSelect, setMultiSelect] = useState<Set<string>>(new Set())
+  const [selectionMode, setSelectionMode] = useState(false)
   const [wgerOpen, setWgerOpen] = useState(false)
 
   const filtered = useMemo(
     () => filterWorkouts(workouts, filters, lockerItems, recoveryScore),
     [workouts, filters, lockerItems, recoveryScore],
-  )
-
-  const targets = useMemo(
-    () => (selected ? planOverloadTargets(selected, lockerItems, recoveryScore) : []),
-    [selected, lockerItems, recoveryScore],
   )
 
   function handleExport() {
@@ -57,6 +60,15 @@ export function WorkoutsPage() {
     alert(`FIT ${fileType} "${workout.name}" geïmporteerd.\n\n${warnings.join('\n')}`)
   }
 
+  function openPrep(id: string) {
+    navigate(`/workouts/prep?ids=${id}`)
+  }
+
+  function openMultiPrep() {
+    if (multiSelect.size === 0) return
+    navigate(`/workouts/prep?ids=${[...multiSelect].join(',')}`)
+  }
+
   function toggleMulti(id: string) {
     setMultiSelect((prev) => {
       const next = new Set(prev)
@@ -66,95 +78,109 @@ export function WorkoutsPage() {
     })
   }
 
-  function handleSelect(workout: WorkoutTemplate) {
-    setSelected(workout)
-  }
-
-  function handleStartSession() {
-    if (!selected) return
-    sessionStorage.setItem('solo-active-workout', JSON.stringify(selected))
-    sessionStorage.setItem('solo-overload-targets', JSON.stringify(targets))
-    navigate('/session')
+  function handleDelete(id: string) {
+    const workout = workouts.find((w) => w.id === id)
+    if (!workout) return
+    if (!confirm(`"${workout.name}" verwijderen?`)) return
+    remove(id)
+    setMultiSelect((prev) => {
+      if (!prev.has(id)) return prev
+      const next = new Set(prev)
+      next.delete(id)
+      return next
+    })
   }
 
   return (
-    <div className="flex flex-col gap-5 py-2">
-      <header className="flex items-center gap-3">
-        <span className="grid size-11 place-items-center rounded-xl bg-surface-2 text-solo-400">
-          <Dumbbell className="size-6" />
-        </span>
-        <div>
-          <h1 className="text-xl font-bold tracking-tight">Workouts</h1>
-          <p className="text-xs text-muted">
-            {filtered.length} van {workouts.length} · selecteer en train
-          </p>
+    <div className="flex flex-col gap-3 py-2">
+      <header className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5">
+          <span className="grid size-9 place-items-center rounded-xl bg-surface-2 text-solo-400">
+            <Dumbbell className="size-5" />
+          </span>
+          <div>
+            <h1 className="text-lg font-bold tracking-tight">Workouts</h1>
+            <p className="text-[11px] text-muted">{filtered.length} beschikbaar</p>
+          </div>
         </div>
+        <button
+          type="button"
+          onClick={() => {
+            setSelectionMode((v) => !v)
+            if (selectionMode) setMultiSelect(new Set())
+          }}
+          className={cn(
+            'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs',
+            selectionMode ? 'border-solo-400/50 bg-solo-400/10 text-solo-300' : 'border-line text-muted',
+          )}
+        >
+          {selectionMode ? <CheckSquare className="size-3.5" /> : <Square className="size-3.5" />}
+          Multi
+        </button>
       </header>
 
-      <WorkoutToolbar
+      <WorkoutCompactToolbar
         onNew={() => navigate('/workouts/new')}
         onExport={handleExport}
         onImportJson={importData}
         onImportFit={handleFitImport}
         onBrowseWger={() => setWgerOpen(true)}
+        filtersOpen={filtersOpen}
+        onToggleFilters={() => setFiltersOpen((v) => !v)}
+        activeFilterCount={countActiveFilters(filters)}
       />
 
-      <WorkoutFiltersPanel
-        filters={filters}
-        recoveryScore={recoveryScore}
-        onChange={setFilters}
-      />
-
-      {multiSelect.size > 0 && (
-        <p className="label-mono text-solo-300">
-          {multiSelect.size} workout(s) geselecteerd voor multi-training
-        </p>
+      {filtersOpen && (
+        <WorkoutFiltersPanel
+          filters={filters}
+          recoveryScore={recoveryScore}
+          onChange={setFilters}
+        />
       )}
 
-      <div className="flex flex-col gap-3">
+      {!selectionMode && (
+        <p className="text-[11px] text-faint">Tik een workout om te openen en te starten.</p>
+      )}
+
+      <div className="flex flex-col gap-2 pb-20">
         {filtered.map((workout) => (
-          <div key={workout.id} className="flex gap-2">
-            <input
-              type="checkbox"
-              checked={multiSelect.has(workout.id)}
-              onChange={() => toggleMulti(workout.id)}
-              className="mt-5 size-4 shrink-0 accent-solo-400"
-              aria-label={`Selecteer ${workout.name}`}
-            />
-            <div className="min-w-0 flex-1">
-              <WorkoutCard
-                workout={workout}
-                selected={selected?.id === workout.id}
-                onSelect={handleSelect}
-                onToggleFavorite={toggleFav}
-                onEdit={(id) => navigate(`/workouts/${id}/edit`)}
-              />
-            </div>
-          </div>
+          <WorkoutCard
+            key={workout.id}
+            workout={workout}
+            selectionMode={selectionMode}
+            multiSelected={multiSelect.has(workout.id)}
+            onOpen={(w) => (selectionMode ? toggleMulti(w.id) : openPrep(w.id))}
+            onEdit={(w) => navigate(`/workouts/${w.id}/edit`)}
+            onDelete={handleDelete}
+            onToggleMulti={toggleMulti}
+            onToggleFavorite={toggleFav}
+          />
         ))}
 
         {filtered.length === 0 && (
           <p className="rounded-card border border-dashed border-line p-6 text-center text-sm text-muted">
-            Geen workouts gevonden met deze filters. Pas filters aan of maak een nieuwe workout.
+            Geen workouts gevonden. Pas filters aan of maak een nieuwe workout.
           </p>
         )}
       </div>
 
-      {selected && (
-        <WorkoutPrepFlow
-          workout={selected}
-          recoveryScore={recoveryScore}
-          targets={targets}
-          onStartSession={handleStartSession}
-        />
+      {selectionMode && multiSelect.size > 0 && (
+        <div className="fixed inset-x-0 bottom-[calc(var(--bottomnav-h)+env(safe-area-inset-bottom))] z-30 mx-auto max-w-screen-sm px-4 pb-2">
+          <button
+            type="button"
+            onClick={openMultiPrep}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-solo-400 py-3.5 text-sm font-bold text-ink shadow-lg active:bg-solo-500"
+          >
+            <Play className="size-4 fill-ink" />
+            Prep {multiSelect.size} workout{multiSelect.size !== 1 && 's'}
+          </button>
+        </div>
       )}
 
       <WgerBrowser
         open={wgerOpen}
         onClose={() => setWgerOpen(false)}
-        onImportWorkout={(workout) => {
-          add(workout)
-        }}
+        onImportWorkout={(workout) => add(workout)}
       />
     </div>
   )

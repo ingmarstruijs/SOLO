@@ -1,10 +1,12 @@
 import { Play } from 'lucide-react'
 import { NavLink, useNavigate } from 'react-router-dom'
+import { useActiveSession } from '@/hooks/useActiveSession'
 import { bottomNav } from '@/config/nav'
 import { cn } from '@/lib/cn'
 
 export function BottomNav() {
   const navigate = useNavigate()
+  const { active } = useActiveSession()
   const left = bottomNav.slice(0, 2)
   const right = bottomNav.slice(2, 4)
 
@@ -15,16 +17,25 @@ export function BottomNav() {
           <NavItemLink key={item.to} {...item} />
         ))}
 
-        {/* Center elevated Start CTA */}
         <div className="flex items-center justify-center">
           <button
             type="button"
             onClick={() => navigate('/session')}
-            aria-label="Sessie starten"
-            className="-mt-8 grid size-16 place-items-center rounded-full border-4 border-ink bg-solo-400 text-ink shadow-lg shadow-solo-600/30 transition-transform active:scale-95"
+            aria-label={active ? 'Actieve sessie' : 'Sessie starten'}
+            className={cn(
+              '-mt-8 grid size-16 place-items-center rounded-full border-4 text-ink shadow-lg transition-transform active:scale-95',
+              active
+                ? 'border-success bg-success text-ink shadow-success/30 ring-4 ring-success/25 animate-pulse'
+                : 'border-ink bg-solo-400 shadow-solo-600/30',
+            )}
           >
-            <Play className="size-7 translate-x-0.5 fill-ink" />
+            <Play className={cn('size-7 translate-x-0.5 fill-ink', active && 'fill-ink')} />
           </button>
+          {active && (
+            <span className="absolute -mt-[4.5rem] rounded-full bg-success px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-ink">
+              Live
+            </span>
+          )}
         </div>
 
         {right.map((item) => (

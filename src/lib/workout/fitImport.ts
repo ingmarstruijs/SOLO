@@ -12,6 +12,9 @@ export type FitImportResult = {
 
 type FitMessages = ReturnType<Decoder['read']>['messages']
 
+const DEFAULT_SETS = 3
+const DEFAULT_REST_BETWEEN_SETS = 60
+
 /**
  * Decode a Garmin FIT file using the official @garmin/fitsdk.
  * Supports workout plans (workoutStepMesgs) and completed strength activities (setMesgs).
@@ -72,6 +75,7 @@ function parseWorkoutFile(messages: FitMessages, warnings: string[]): FitImportR
   }
 
   const exercises: WorkoutExercise[] = []
+  let workoutSets = DEFAULT_SETS
 
   for (const step of steps) {
     const intensity = String(step.intensity ?? '')
@@ -85,11 +89,12 @@ function parseWorkoutFile(messages: FitMessages, warnings: string[]): FitImportR
 
     const { metric, target } = parseDuration(step)
     const weightKg = step.exerciseWeight ?? 0
+    const repeats = step.repeatSteps && step.repeatSteps > 0 ? step.repeatSteps : 1
+    workoutSets = Math.max(workoutSets, repeats)
 
     exercises.push({
       id: createId(),
       name: stepName,
-      sets: step.repeatSteps && step.repeatSteps > 0 ? step.repeatSteps : 1,
       metric,
       target,
       weightKg: typeof weightKg === 'number' ? Math.round(weightKg * 10) / 10 : 0,
@@ -99,10 +104,12 @@ function parseWorkoutFile(messages: FitMessages, warnings: string[]): FitImportR
     })
   }
 
-  if (exercises.length === 0) {
+  const merged = mergeConsecutiveExercises(exercises)
+
+  if (merged.length === 0) {
     warnings.push('Workout bevat geen actieve stappen.')
   } else {
-    warnings.push(`${exercises.length} workout-stap(pen) gedecodeerd via FIT SDK.`)
+    warnings.push(`${merged.length} workout-stap(pen) gedecodeerd via FIT SDK.`)
   }
 
   return {
@@ -110,10 +117,12 @@ function parseWorkoutFile(messages: FitMessages, warnings: string[]): FitImportR
     workout: {
       name,
       description,
-      exercises: mergeConsecutiveExercises(exercises),
+      exercises: merged,
+      sets: workoutSets,
+      restBetweenSets: DEFAULT_REST_BETWEEN_SETS,
       favorite: false,
       source: 'garmin-fit',
-      estimatedMinutes: recalcWorkoutDuration(exercises),
+      estimatedMinutes: recalcWorkoutDuration(merged, workoutSets),
       tags: ['garmin', 'fit', 'workout'],
     },
     warnings,
@@ -125,7 +134,7 @@ function parseStrengthActivity(messages: FitMessages, warnings: string[]): FitIm
   const sets = messages.setMesgs ?? []
   const sport = session?.sport ?? 'training'
 
-  const grouped = new Map<string, WorkoutExercise>()
+  const grouped = new Map<string, WorkoutExercise & { setCount: number }>()
 
   for (const set of sets) {
     const reps = set.repetitions ?? 10
@@ -134,14 +143,14 @@ function parseStrengthActivity(messages: FitMessages, warnings: string[]): FitIm
 
     const existing = grouped.get(key)
     if (existing) {
-      existing.sets += 1
+      existing.setCount += 1
       existing.target = Math.max(existing.target, reps)
       existing.weightKg = Math.max(existing.weightKg, weight)
     } else {
       grouped.set(key, {
         id: createId(),
         name: `Oefening ${grouped.size + 1}`,
-        sets: 1,
+        setCount: 1,
         metric: 'reps',
         target: reps,
         weightKg: weight,
@@ -151,7 +160,10 @@ function parseStrengthActivity(messages: FitMessages, warnings: string[]): FitIm
     }
   }
 
-  const exercises = [...grouped.values()]
+  const entries = [...grouped.values()]
+  const workoutSets = entries.length > 0 ? Math.max(...entries.map((e) => e.setCount)) : DEFAULT_SETS
+  const exercises: WorkoutExercise[] = entries.map(({ setCount: _c, ...ex }) => ex)
+
   warnings.push(`${sets.length} set(s) uit strength-activiteit geïmporteerd.`)
 
   return {
@@ -160,9 +172,11 @@ function parseStrengthActivity(messages: FitMessages, warnings: string[]): FitIm
       name: `Garmin ${sport}`,
       description: 'Geïmporteerd uit Garmin strength-activiteit (setMesgs)',
       exercises,
+      sets: workoutSets,
+      restBetweenSets: DEFAULT_REST_BETWEEN_SETS,
       favorite: false,
       source: 'garmin-fit',
-      estimatedMinutes: recalcWorkoutDuration(exercises),
+      estimatedMinutes: recalcWorkoutDuration(exercises, workoutSets),
       tags: ['garmin', 'fit', 'activity'],
     },
     warnings,
@@ -180,6 +194,8 @@ function parseSessionActivity(messages: FitMessages, warnings: string[]): FitImp
       name,
       description: 'Geïmporteerd FIT-sessie (beperkte data)',
       exercises: [],
+      sets: DEFAULT_SETS,
+      restBetweenSets: DEFAULT_REST_BETWEEN_SETS,
       favorite: false,
       source: 'garmin-fit',
       estimatedMinutes: 0,
@@ -233,16 +249,13 @@ function messageIndexNumber(value: unknown, fallback: number): number {
   return typeof value === 'number' ? value : fallback
 }
 
-/** Merge identical consecutive exercises into multi-set entries. */
+/** Merge identical consecutive exercises into one entry. */
 function mergeConsecutiveExercises(exercises: WorkoutExercise[]): WorkoutExercise[] {
   const merged: WorkoutExercise[] = []
   for (const ex of exercises) {
     const prev = merged.at(-1)
-    if (prev && prev.name === ex.name && prev.weightKg === ex.weightKg) {
-      prev.sets += ex.sets
-    } else {
-      merged.push({ ...ex })
-    }
+    if (prev && prev.name === ex.name && prev.weightKg === ex.weightKg) continue
+    merged.push({ ...ex })
   }
   return merged
 }
@@ -253,6 +266,8 @@ function emptyResult(name: string, warnings: string[]): FitImportResult {
     workout: {
       name,
       exercises: [],
+      sets: DEFAULT_SETS,
+      restBetweenSets: DEFAULT_REST_BETWEEN_SETS,
       favorite: false,
       source: 'garmin-fit',
       estimatedMinutes: 0,

@@ -1,5 +1,5 @@
 import { Loader2, Search, X } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { WgerExerciseInfo } from '@/types/wger'
 import { searchExercises, exerciseDisplayName, stripHtml } from '@/lib/wger/client'
 import {
@@ -19,23 +19,67 @@ type WgerBrowserProps = {
 export function WgerBrowser({ open, onClose, onImportWorkout }: WgerBrowserProps) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<WgerExerciseInfo[]>([])
+  const [count, setCount] = useState(0)
+  const [nextOffset, setNextOffset] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<number>>(new Set())
+  const listRef = useRef<HTMLUListElement>(null)
+  const sentinelRef = useRef<HTMLLIElement>(null)
 
   const search = useCallback(async (q: string) => {
     setLoading(true)
     setError(null)
     try {
-      const data = await searchExercises(q)
-      setResults(data)
+      const page = await searchExercises(q)
+      setResults(page.results)
+      setCount(page.count)
+      setNextOffset(page.nextOffset)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Wger API niet bereikbaar')
       setResults([])
+      setCount(0)
+      setNextOffset(null)
     } finally {
       setLoading(false)
     }
   }, [])
+
+  const loadMore = useCallback(async () => {
+    if (nextOffset == null || loadingMore) return
+    setLoadingMore(true)
+    try {
+      const page = await searchExercises(query, undefined, undefined, nextOffset)
+      setResults((prev) => {
+        const seen = new Set(prev.map((r) => r.id))
+        return [...prev, ...page.results.filter((r) => !seen.has(r.id))]
+      })
+      setCount(page.count)
+      setNextOffset(page.nextOffset)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Wger API niet bereikbaar')
+    } finally {
+      setLoadingMore(false)
+    }
+  }, [nextOffset, loadingMore, query])
+
+  useEffect(() => {
+    if (!open || loading || loadingMore || nextOffset == null) return
+
+    const sentinel = sentinelRef.current
+    const root = listRef.current
+    if (!sentinel || !root) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) loadMore()
+      },
+      { root, rootMargin: '160px' },
+    )
+    observer.observe(sentinel)
+    return () => observer.disconnect()
+  }, [open, loading, loadingMore, nextOffset, loadMore])
 
   useEffect(() => {
     if (!open) return
@@ -100,9 +144,14 @@ export function WgerBrowser({ open, onClose, onImportWorkout }: WgerBrowserProps
               autoFocus
             />
           </div>
+          {!loading && !error && count > 0 && (
+            <p className="mt-2 text-xs text-muted">
+              {results.length} van {count} oefeningen
+            </p>
+          )}
         </div>
 
-        <ul className="flex-1 overflow-y-auto p-2">
+        <ul ref={listRef} className="flex-1 overflow-y-auto p-2">
           {loading && (
             <li className="flex items-center justify-center gap-2 py-8 text-sm text-muted">
               <Loader2 className="size-4 animate-spin" />
@@ -155,6 +204,13 @@ export function WgerBrowser({ open, onClose, onImportWorkout }: WgerBrowserProps
               </li>
             )
           })}
+
+          {!loading && !error && nextOffset != null && (
+            <li ref={sentinelRef} className="flex items-center justify-center gap-2 py-4 text-sm text-muted">
+              {loadingMore && <Loader2 className="size-4 animate-spin" />}
+              {loadingMore ? 'Meer laden…' : null}
+            </li>
+          )}
         </ul>
 
         <footer className="border-t border-line p-4">

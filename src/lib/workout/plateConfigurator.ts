@@ -1,80 +1,124 @@
-import type { PlateConfig } from '@/types/workout'
+import type { PlateConfig, PlateItemUsed } from '@/types/workout'
 import type { EquipmentCategory, LockerItem } from '@/types/locker'
 
 const DEFAULT_BAR_KG = 20
 
-/** Collect available plate weights from locker inventory. */
-export function getAvailablePlates(items: LockerItem[]): number[] {
-  return items
-    .filter((i) => i.category === 'weight_plate' && i.weightKg != null)
-    .map((i) => i.weightKg!)
+function lockerPlates(items: LockerItem[]): LockerItem[] {
+  return items.filter((i) => i.category === 'weight_plate' && i.weightKg != null)
 }
 
-/** Get bar weight from locker or fall back to Olympic standard. */
+function lockerDumbbells(items: LockerItem[]): LockerItem[] {
+  return items.filter((i) => i.category === 'dumbbell' && i.weightKg != null)
+}
+
+function lockerKettlebells(items: LockerItem[]): LockerItem[] {
+  return items.filter((i) => i.category === 'kettlebell' && i.weightKg != null)
+}
+
 export function getBarWeight(items: LockerItem[]): number {
   const bar = items.find((i) => i.category === 'barbell' && i.weightKg != null)
   return bar?.weightKg ?? DEFAULT_BAR_KG
 }
 
-/**
- * Greedy plate loading per side.
- * Returns the closest achievable total ≤ target using available plates.
- */
+function findClosestItem(items: LockerItem[], targetKg: number): LockerItem | null {
+  if (items.length === 0) return null
+  return items.reduce((best, item) =>
+    Math.abs((item.weightKg ?? 0) - targetKg) < Math.abs((best.weightKg ?? 0) - targetKg)
+      ? item
+      : best,
+  )
+}
+
+function greedyPlatesFromLocker(
+  targetPerSide: number,
+  plates: LockerItem[],
+): { perSide: number[]; itemsUsed: PlateItemUsed[] } {
+  const sorted = [...plates].sort((a, b) => (b.weightKg ?? 0) - (a.weightKg ?? 0))
+  const perSide: number[] = []
+  const used = new Map<number, { item: LockerItem; count: number }>()
+  let remaining = targetPerSide
+
+  for (const plate of sorted) {
+    const w = plate.weightKg!
+    while (remaining >= w - 0.001) {
+      perSide.push(w)
+      remaining = Math.round((remaining - w) * 100) / 100
+      const entry = used.get(w) ?? { item: plate, count: 0 }
+      entry.count++
+      used.set(w, entry)
+    }
+  }
+
+  const itemsUsed: PlateItemUsed[] = [...used.values()].map(({ item, count }) => ({
+    label: item.name,
+    weightKg: item.weightKg!,
+    count: count * 2,
+    category: 'weight_plate' as const,
+  }))
+
+  return { perSide, itemsUsed }
+}
+
 export function configurePlates(
   targetKg: number,
   items: LockerItem[],
   equipment: EquipmentCategory[],
 ): PlateConfig {
-  if (targetKg <= 0 || equipment.length === 0) {
-    return {
-      mode: 'bodyweight',
-      targetKg,
-      barWeightKg: 0,
-      platesPerSide: [],
-      totalKg: 0,
-      achievable: true,
-    }
+  const empty: PlateConfig = {
+    mode: 'bodyweight',
+    targetKg,
+    barWeightKg: 0,
+    platesPerSide: [],
+    totalKg: 0,
+    achievable: true,
+    itemsUsed: [],
   }
+
+  if (targetKg <= 0 || equipment.length === 0) return empty
 
   const primary = equipment[0]
 
   if (primary === 'dumbbell') {
+    const match = findClosestItem(lockerDumbbells(items), targetKg)
+    const actual = match?.weightKg ?? targetKg
     return {
       mode: 'dumbbell',
       targetKg,
       barWeightKg: 0,
       platesPerSide: [],
-      totalKg: targetKg,
-      achievable: true,
-      note: 'Per dumbbell',
+      totalKg: actual,
+      achievable: match != null,
+      itemsUsed: match
+        ? [{ label: match.name, weightKg: actual, count: 2, category: 'dumbbell' }]
+        : [],
+      note: match ? 'Per hand' : `Geen ${targetKg} kg dumbbell in locker`,
     }
   }
 
   if (primary === 'kettlebell') {
+    const match = findClosestItem(lockerKettlebells(items), targetKg)
+    const actual = match?.weightKg ?? targetKg
     return {
       mode: 'kettlebell',
       targetKg,
       barWeightKg: 0,
       platesPerSide: [],
-      totalKg: targetKg,
-      achievable: true,
+      totalKg: actual,
+      achievable: match != null,
+      itemsUsed: match
+        ? [{ label: match.name, weightKg: actual, count: 1, category: 'kettlebell' }]
+        : [],
+      note: match ? undefined : `Geen ${targetKg} kg kettlebell in locker`,
     }
   }
 
   if (primary !== 'barbell' && primary !== 'weight_plate') {
-    return {
-      mode: 'bodyweight',
-      targetKg,
-      barWeightKg: 0,
-      platesPerSide: [],
-      totalKg: targetKg,
-      achievable: true,
-      note: 'Geen barbell-configuratie nodig',
-    }
+    return { ...empty, totalKg: targetKg, note: 'Geen gewicht nodig' }
   }
 
+  const barItem = items.find((i) => i.category === 'barbell')
   const barWeight = getBarWeight(items)
-  const plates = getAvailablePlates(items)
+  const plates = lockerPlates(items)
 
   if (plates.length === 0) {
     return {
@@ -84,15 +128,20 @@ export function configurePlates(
       platesPerSide: [],
       totalKg: barWeight,
       achievable: targetKg <= barWeight,
-      note: plates.length === 0 ? 'Geen schijven in locker' : undefined,
+      itemsUsed: barItem
+        ? [{ label: barItem.name, weightKg: barWeight, count: 1, category: 'barbell' }]
+        : [],
+      note: 'Geen schijven in locker',
     }
   }
 
   const perSideTarget = Math.max(0, (targetKg - barWeight) / 2)
-  const sorted = [...new Set(plates)].sort((a, b) => b - a)
-  const perSide = greedyPlates(perSideTarget, sorted)
+  const { perSide, itemsUsed: plateItems } = greedyPlatesFromLocker(perSideTarget, plates)
+  const barUsed: PlateItemUsed[] = barItem
+    ? [{ label: barItem.name, weightKg: barWeight, count: 1, category: 'barbell' }]
+    : [{ label: 'Olympic bar', weightKg: barWeight, count: 1, category: 'barbell' }]
+
   const totalKg = barWeight + perSide.reduce((s, p) => s + p, 0) * 2
-  const achievable = Math.abs(totalKg - targetKg) < 0.01 || totalKg <= targetKg
 
   return {
     mode: 'barbell',
@@ -100,21 +149,8 @@ export function configurePlates(
     barWeightKg: barWeight,
     platesPerSide: perSide,
     totalKg,
-    achievable,
-    note: totalKg < targetKg ? `Max ${totalKg} kg met huidige schijven` : undefined,
+    achievable: totalKg >= targetKg - 0.5,
+    itemsUsed: [...barUsed, ...plateItems],
+    note: totalKg < targetKg ? `Max ${totalKg} kg met locker schijven` : undefined,
   }
-}
-
-function greedyPlates(target: number, plates: number[]): number[] {
-  const result: number[] = []
-  let remaining = target
-
-  for (const plate of plates) {
-    while (remaining >= plate - 0.001) {
-      result.push(plate)
-      remaining = Math.round((remaining - plate) * 100) / 100
-    }
-  }
-
-  return result
 }

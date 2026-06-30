@@ -1,14 +1,15 @@
 import { ArrowLeft } from 'lucide-react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useLocation } from 'react-router-dom'
 import { getWorkout } from '@/lib/storage/workoutStore'
 import { useWorkouts } from '@/hooks/useWorkouts'
 import { WorkoutBuilder } from '@/components/workout/WorkoutBuilder'
 
 export function WorkoutEditorPage() {
   const { id } = useParams<{ id: string }>()
+  const location = useLocation()
   const navigate = useNavigate()
-  const { add, update } = useWorkouts()
-  const isNew = id === 'new'
+  const { add, update, remove } = useWorkouts()
+  const isNew = location.pathname.endsWith('/new') || !id
   const existing = isNew ? undefined : getWorkout(id!)
 
   if (!isNew && !existing) {
@@ -46,6 +47,15 @@ export function WorkoutEditorPage() {
           navigate('/workouts')
         }}
         onCancel={() => navigate('/workouts')}
+        onDelete={
+          isNew
+            ? undefined
+            : () => {
+                if (!confirm(`"${existing!.name}" verwijderen?`)) return
+                remove(id!)
+                navigate('/workouts')
+              }
+        }
       />
     </div>
   )

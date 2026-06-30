@@ -8,7 +8,6 @@ import {
   type LucideIcon,
   Settings,
   Share2,
-  Tv,
 } from 'lucide-react'
 
 export type NavItem = {
@@ -28,7 +27,6 @@ export const bottomNav: NavItem[] = [
 /** Secondary destinations shown in the slide-in drawer. */
 export const drawerNav: NavItem[] = [
   { to: '/', label: 'Home', icon: Home },
-  { to: '/tv', label: 'Verbind met TV', icon: Tv },
   { to: '/lab', label: 'Labs', icon: FlaskConical },
   { to: '/integrations', label: 'Integraties', icon: Share2 },
   { to: '/settings', label: 'Instellingen', icon: Settings },

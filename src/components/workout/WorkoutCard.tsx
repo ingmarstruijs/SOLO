@@ -1,82 +1,144 @@
-import { Clock, Dumbbell, Star } from 'lucide-react'
+import { ChevronRight, Clock, Dumbbell, Pencil, Star, Trash2 } from 'lucide-react'
 import type { WorkoutTemplate } from '@/types/workout'
-import { getWorkoutEquipment } from '@/lib/workout/filters'
-import { EquipmentIcon } from '@/components/locker/EquipmentIcon'
+import { ExerciseIcon } from '@/components/workout/ExerciseIcon'
+import { getWorkoutStructure } from '@/lib/workout/workoutStructure'
 import { cn } from '@/lib/cn'
 
 type WorkoutCardProps = {
   workout: WorkoutTemplate
   selected?: boolean
-  onSelect: (workout: WorkoutTemplate) => void
+  multiSelected?: boolean
+  selectionMode?: boolean
+  onOpen: (workout: WorkoutTemplate) => void
+  onEdit?: (workout: WorkoutTemplate) => void
+  onDelete?: (id: string) => void
+  onToggleMulti?: (id: string) => void
   onToggleFavorite: (id: string) => void
-  onEdit: (id: string) => void
 }
 
 export function WorkoutCard({
   workout,
   selected,
-  onSelect,
-  onToggleFavorite,
+  multiSelected,
+  selectionMode,
+  onOpen,
   onEdit,
+  onDelete,
+  onToggleMulti,
+  onToggleFavorite,
 }: WorkoutCardProps) {
-  const equipment = getWorkoutEquipment(workout)
+  const preview = workout.exercises.slice(0, 4)
 
   return (
     <article
       className={cn(
-        'rounded-card border bg-surface p-4 transition-colors',
-        selected ? 'border-solo-400 bg-solo-400/5' : 'border-line',
+        'rounded-card border bg-surface transition-colors',
+        selected || multiSelected ? 'border-solo-400 bg-solo-400/5' : 'border-line',
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <button type="button" onClick={() => onSelect(workout)} className="min-w-0 flex-1 text-left">
-          <p className="font-semibold">{workout.name}</p>
-          {workout.description && (
-            <p className="mt-0.5 line-clamp-2 text-xs text-muted">{workout.description}</p>
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={() => onToggleFavorite(workout.id)}
-          className="shrink-0 p-1"
-          aria-label={workout.favorite ? 'Verwijder uit favorieten' : 'Voeg toe aan favorieten'}
-        >
-          <Star
-            className={cn('size-5', workout.favorite ? 'fill-warn text-warn' : 'text-faint')}
-          />
-        </button>
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-muted">
-        <span className="flex items-center gap-1">
-          <Clock className="size-3.5" />
-          {workout.estimatedMinutes} min
-        </span>
-        <span className="flex items-center gap-1">
-          <Dumbbell className="size-3.5" />
-          {workout.exercises.length} oefeningen
-        </span>
-        {workout.source !== 'manual' && (
-          <span className="label-mono text-faint">{workout.source}</span>
-        )}
-      </div>
-
-      {equipment.length > 0 && (
-        <div className="mt-3 flex gap-1.5">
-          {equipment.map((cat) => (
-            <span key={cat} className="grid size-8 place-items-center rounded-lg bg-surface-2" title={cat}>
-              <EquipmentIcon category={cat} size={20} />
-            </span>
-          ))}
-        </div>
-      )}
-
       <button
         type="button"
-        onClick={() => onEdit(workout.id)}
-        className="label-mono mt-3 text-[10px] text-solo-400 active:opacity-70"
+        onClick={() => onOpen(workout)}
+        className="flex w-full items-start gap-3 p-3 text-left active:bg-surface-2"
       >
-        Bewerken →
+        {selectionMode && onToggleMulti && (
+          <input
+            type="checkbox"
+            checked={multiSelected}
+            onChange={(e) => {
+              e.stopPropagation()
+              onToggleMulti(workout.id)
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="mt-1 size-4 shrink-0 accent-solo-400"
+            aria-label={`Multi-select ${workout.name}`}
+          />
+        )}
+
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="font-semibold leading-tight">{workout.name}</p>
+              {workout.description && (
+                <p className="mt-0.5 line-clamp-1 text-xs text-muted">{workout.description}</p>
+              )}
+            </div>
+            <div className="flex shrink-0 items-center gap-0.5">
+              {onEdit && !selectionMode && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onEdit(workout)
+                  }}
+                  className="p-1 text-faint active:text-fg"
+                  aria-label={`${workout.name} bewerken`}
+                >
+                  <Pencil className="size-4" />
+                </button>
+              )}
+              {onDelete && !selectionMode && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onDelete(workout.id)
+                  }}
+                  className="p-1 text-faint active:text-danger"
+                  aria-label={`${workout.name} verwijderen`}
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onToggleFavorite(workout.id)
+                }}
+                className="p-1"
+                aria-label={workout.favorite ? 'Verwijder uit favorieten' : 'Favoriet'}
+              >
+                <Star className={cn('size-4', workout.favorite ? 'fill-warn text-warn' : 'text-faint')} />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted">
+            <span className="flex items-center gap-1">
+              <Clock className="size-3" />
+              {workout.estimatedMinutes} min
+            </span>
+            <span className="flex items-center gap-1">
+              <Dumbbell className="size-3" />
+              {workout.exercises.length}
+            </span>
+            {getWorkoutStructure(workout) === 'circuit' ? (
+              <span className="label-mono text-faint">{workout.circuitRounds} rondes</span>
+            ) : (
+              <span className="label-mono text-faint">{workout.sets} sets</span>
+            )}
+          </div>
+
+          <div className="flex gap-1.5">
+            {preview.map((ex) => (
+              <span
+                key={ex.id}
+                className="grid size-9 place-items-center rounded-lg bg-surface-2"
+                title={ex.name}
+              >
+                <ExerciseIcon metric={ex.metric} kind={ex.kind} equipment={ex.equipment} icon={ex.icon} size={22} />
+              </span>
+            ))}
+            {workout.exercises.length > 4 && (
+              <span className="grid size-9 place-items-center rounded-lg bg-surface-2 text-[10px] text-faint">
+                +{workout.exercises.length - 4}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <ChevronRight className="mt-1 size-5 shrink-0 text-faint" />
       </button>
     </article>
   )

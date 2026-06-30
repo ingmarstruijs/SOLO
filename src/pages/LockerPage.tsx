@@ -1,33 +1,29 @@
 import { Boxes } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import type { LockerItem } from '@/types/locker'
-import { draftToLockerItem } from '@/lib/locker/smartImport'
-import type { SmartImportDraft } from '@/lib/locker/smartImport'
 import { useLocker } from '@/hooks/useLocker'
 import { LockerItemCard } from '@/components/locker/LockerItemCard'
 import { LockerItemForm } from '@/components/locker/LockerItemForm'
+import { LockerProfileSwitcher } from '@/components/locker/LockerProfileSwitcher'
 import { LockerToolbar } from '@/components/locker/LockerToolbar'
 
 type Modal = 'add' | 'edit' | null
 
 export function LockerPage() {
-  const { items, add, update, remove, exportData, importData } = useLocker()
+  const { items, activeProfile, add, update, remove, exportData, importData } = useLocker()
   const [modal, setModal] = useState<Modal>(null)
   const [editing, setEditing] = useState<LockerItem | null>(null)
 
   function handleExport() {
     const data = exportData()
+    const slug = activeProfile.name.toLowerCase().replace(/\s+/g, '-')
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `solo-locker-${new Date().toISOString().slice(0, 10)}.json`
+    a.download = `solo-locker-${slug}-${new Date().toISOString().slice(0, 10)}.json`
     a.click()
     URL.revokeObjectURL(url)
-  }
-
-  function handleSmartImport(draft: SmartImportDraft) {
-    add(draftToLockerItem(draft))
   }
 
   function handleSave(data: Omit<LockerItem, 'id' | 'createdAt' | 'updatedAt'>) {
@@ -52,23 +48,27 @@ export function LockerPage() {
           <Boxes className="size-6" />
         </span>
         <div>
-          <h1 className="text-xl font-bold tracking-tight">Home Locker</h1>
+          <h1 className="text-xl font-bold tracking-tight">Locker</h1>
           <p className="text-xs text-muted">
-            {items.length} item{items.length !== 1 && 's'} · jouw thuis materiaal
+            {activeProfile.name} · {items.length} item{items.length !== 1 && 's'}
           </p>
         </div>
       </header>
 
+      <LockerProfileSwitcher />
+
       <LockerToolbar
-        onAdd={() => { setEditing(null); setModal('add') }}
+        onAdd={() => {
+          setEditing(null)
+          setModal('add')
+        }}
         onExport={handleExport}
         onImport={importData}
-        onSmartImport={handleSmartImport}
       />
 
       {items.length === 0 ? (
         <p className="rounded-card border border-dashed border-line p-6 text-center text-sm text-muted">
-          Nog geen materiaal. Voeg dumbbells, kettlebells, banden en meer toe — of gebruik smart import.
+          Nog geen materiaal in {activeProfile.name}. Voeg dumbbells, kettlebells, banden en meer toe.
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
@@ -87,14 +87,22 @@ export function LockerPage() {
       )}
 
       {modal && (
-        <ModalOverlay onClose={() => { setModal(null); setEditing(null) }}>
+        <ModalOverlay
+          onClose={() => {
+            setModal(null)
+            setEditing(null)
+          }}
+        >
           <h2 className="mb-4 text-lg font-bold">
             {modal === 'edit' ? 'Item bewerken' : 'Materiaal toevoegen'}
           </h2>
           <LockerItemForm
             initial={editing ?? undefined}
             onSave={handleSave}
-            onCancel={() => { setModal(null); setEditing(null) }}
+            onCancel={() => {
+              setModal(null)
+              setEditing(null)
+            }}
           />
         </ModalOverlay>
       )}

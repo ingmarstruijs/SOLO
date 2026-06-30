@@ -16,7 +16,6 @@ export function wgerExerciseToWorkoutExercise(
     id: createId(),
     name: exerciseDisplayName(info, language),
     externalId: String(info.id),
-    sets: 3,
     metric: 'reps',
     target: 10,
     weightKg: guessDefaultWeight(equipment),
@@ -40,14 +39,17 @@ function guessDefaultWeight(equipment: EquipmentCategory[]): number {
 export function buildWorkoutFromWgerExercises(
   name: string,
   exercises: WorkoutExercise[],
+  sets = 3,
 ): Omit<WorkoutTemplate, 'id' | 'createdAt' | 'updatedAt'> {
   return {
     name,
     description: 'Geïmporteerd uit Wger open-source database',
     exercises,
+    sets,
+    restBetweenSets: 75,
     favorite: false,
     source: 'wger',
-    estimatedMinutes: recalcWorkoutDuration(exercises),
+    estimatedMinutes: recalcWorkoutDuration(exercises, sets),
     tags: ['wger', 'imported'],
   }
 }

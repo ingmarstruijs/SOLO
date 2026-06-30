@@ -12,22 +12,44 @@ async function wgerFetch<T>(path: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
-/** Search exercises via the combined exerciseinfo endpoint. */
+export type ExercisePage = {
+  results: WgerExerciseInfo[]
+  count: number
+  /** Offset to use for the next page, or null when there are no more. */
+  nextOffset: number | null
+}
+
+/**
+ * Search exercises via the combined exerciseinfo endpoint, with pagination.
+ *
+ * The legacy `/exercise/search/` endpoint and the generic `search`/`name__icontains`
+ * query params no longer filter on wger.de. The current API exposes full-text name
+ * (and alias) search through `name__search`, optionally scoped with `language__code`.
+ */
 export async function searchExercises(
   query: string,
-  language = WGER_LANG_NL,
-  limit = 20,
-): Promise<WgerExerciseInfo[]> {
+  languageCode?: string,
+  limit = 50,
+  offset = 0,
+): Promise<ExercisePage> {
   const params = new URLSearchParams({
-    language: String(language),
     limit: String(limit),
+    offset: String(offset),
   })
-  if (query.trim()) params.set('search', query.trim())
+  if (query.trim()) {
+    params.set('name__search', query.trim())
+    if (languageCode) params.set('language__code', languageCode)
+  }
 
   const data = await wgerFetch<WgerPaginated<WgerExerciseInfo>>(
     `/exerciseinfo/?${params}`,
   )
-  return data.results
+
+  return {
+    results: data.results,
+    count: data.count,
+    nextOffset: data.next ? offset + data.results.length : null,
+  }
 }
 
 export async function getExercise(id: number, language = WGER_LANG_NL): Promise<WgerExerciseInfo> {

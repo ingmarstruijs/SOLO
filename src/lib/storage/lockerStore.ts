@@ -1,7 +1,8 @@
-import type { LockerExport, LockerItem } from '@/types/locker'
+import type { LockerCollection, LockerExport, LockerItem, LockerProfile } from '@/types/locker'
 import { createId, readStore, subscribeStore, writeStore } from './localStore'
 
-const KEY = 'solo-locker'
+const KEY = 'solo-lockers'
+const LEGACY_KEY = 'solo-locker'
 
 const SEED_LOCKER: LockerItem[] = [
   {
@@ -95,22 +96,117 @@ const SEED_LOCKER: LockerItem[] = [
   },
 ]
 
-function ensureSeed(): LockerItem[] {
-  const existing = readStore<LockerItem[]>(KEY, [])
-  if (existing.length === 0) {
-    writeStore(KEY, SEED_LOCKER)
-    // Re-read so we return the cached (stable) reference rather than the seed constant.
-    return readStore<LockerItem[]>(KEY, [])
+function createProfile(name: string, items: LockerItem[], id?: string): LockerProfile {
+  const now = new Date().toISOString()
+  return {
+    id: id ?? createId(),
+    name,
+    items,
+    createdAt: now,
+    updatedAt: now,
   }
-  return existing
+}
+
+function migrateLegacyCollection(): LockerCollection {
+  const legacyItems = readStore<LockerItem[]>(LEGACY_KEY, [])
+  const home = createProfile('Thuis', legacyItems.length > 0 ? legacyItems : SEED_LOCKER)
+  return { profiles: [home], activeProfileId: home.id }
+}
+
+function ensureCollection(): LockerCollection {
+  const existing = readStore<LockerCollection | null>(KEY, null)
+  if (existing?.profiles?.length) {
+    const activeExists = existing.profiles.some((p) => p.id === existing.activeProfileId)
+    if (activeExists) return existing
+    const fixed = { ...existing, activeProfileId: existing.profiles[0].id }
+    writeStore(KEY, fixed)
+    return readStore<LockerCollection>(KEY, fixed)
+  }
+
+  const migrated = migrateLegacyCollection()
+  writeStore(KEY, migrated)
+  return readStore<LockerCollection>(KEY, migrated)
+}
+
+function updateCollection(mutator: (collection: LockerCollection) => LockerCollection): void {
+  writeStore(KEY, mutator(ensureCollection()))
+}
+
+function getActiveProfile(collection = ensureCollection()): LockerProfile {
+  return collection.profiles.find((p) => p.id === collection.activeProfileId) ?? collection.profiles[0]
+}
+
+export function getLockerCollection(): LockerCollection {
+  return ensureCollection()
+}
+
+export function getLockerProfiles(): LockerProfile[] {
+  return ensureCollection().profiles
+}
+
+export function getActiveLockerId(): string {
+  return ensureCollection().activeProfileId
+}
+
+export function getActiveLockerProfile(): LockerProfile {
+  return getActiveProfile()
 }
 
 export function getLockerItems(): LockerItem[] {
-  return ensureSeed()
+  return getActiveProfile().items
 }
 
-export function saveLockerItems(items: LockerItem[]): void {
-  writeStore(KEY, items)
+export function setActiveLockerProfile(id: string): void {
+  updateCollection((collection) => {
+    if (!collection.profiles.some((p) => p.id === id)) return collection
+    return { ...collection, activeProfileId: id }
+  })
+}
+
+export function addLockerProfile(name: string): LockerProfile {
+  const profile = createProfile(name.trim() || 'Nieuwe locker', [])
+  updateCollection((collection) => ({
+    profiles: [...collection.profiles, profile],
+    activeProfileId: profile.id,
+  }))
+  return profile
+}
+
+export function renameLockerProfile(id: string, name: string): void {
+  const trimmed = name.trim()
+  if (!trimmed) return
+  updateCollection((collection) => ({
+    ...collection,
+    profiles: collection.profiles.map((p) =>
+      p.id === id ? { ...p, name: trimmed, updatedAt: new Date().toISOString() } : p,
+    ),
+  }))
+}
+
+export function removeLockerProfile(id: string): boolean {
+  const collection = ensureCollection()
+  if (collection.profiles.length <= 1) return false
+
+  const profiles = collection.profiles.filter((p) => p.id !== id)
+  if (profiles.length === collection.profiles.length) return false
+
+  updateCollection(() => ({
+    profiles,
+    activeProfileId:
+      collection.activeProfileId === id ? profiles[0].id : collection.activeProfileId,
+  }))
+  return true
+}
+
+function saveActiveLockerItems(items: LockerItem[]): void {
+  updateCollection((collection) => ({
+    ...collection,
+    profiles: collection.profiles.map((p) =>
+      p.id === collection.activeProfileId
+        ? { ...p, items, updatedAt: new Date().toISOString() }
+        : p,
+    ),
+  }))
 }
 
 export function addLockerItem(
@@ -118,7 +214,7 @@ export function addLockerItem(
 ): LockerItem {
   const now = new Date().toISOString()
   const item: LockerItem = { ...partial, id: createId(), createdAt: now, updatedAt: now }
-  saveLockerItems([...getLockerItems(), item])
+  saveActiveLockerItems([...getLockerItems(), item])
   return item
 }
 
@@ -127,17 +223,24 @@ export function updateLockerItem(id: string, patch: Partial<LockerItem>): Locker
   const idx = items.findIndex((i) => i.id === id)
   if (idx === -1) return null
   const updated = { ...items[idx], ...patch, updatedAt: new Date().toISOString() }
-  items[idx] = updated
-  saveLockerItems(items)
+  const next = [...items]
+  next[idx] = updated
+  saveActiveLockerItems(next)
   return updated
 }
 
 export function removeLockerItem(id: string): void {
-  saveLockerItems(getLockerItems().filter((i) => i.id !== id))
+  saveActiveLockerItems(getLockerItems().filter((i) => i.id !== id))
 }
 
 export function exportLocker(): LockerExport {
-  return { version: 1, exportedAt: new Date().toISOString(), items: getLockerItems() }
+  const profile = getActiveProfile()
+  return {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    profileName: profile.name,
+    items: profile.items,
+  }
 }
 
 export function importLocker(data: LockerExport): number {
@@ -150,7 +253,7 @@ export function importLocker(data: LockerExport): number {
       added++
     }
   }
-  saveLockerItems(merged)
+  saveActiveLockerItems(merged)
   return added
 }
 

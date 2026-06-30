@@ -29,8 +29,22 @@ export type LockerItem = {
   updatedAt: string
 }
 
+export type LockerProfile = {
+  id: string
+  name: string
+  items: LockerItem[]
+  createdAt: string
+  updatedAt: string
+}
+
+export type LockerCollection = {
+  profiles: LockerProfile[]
+  activeProfileId: string
+}
+
 export type LockerExport = {
   version: 1
   exportedAt: string
+  profileName?: string
   items: LockerItem[]
 }

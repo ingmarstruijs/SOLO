@@ -50,6 +50,74 @@
     color-scheme: dark;
   }
 
+  /* Ochtend — zacht licht, warme dageraad (light) */
+  [data-theme='ochtend'] {
+    color-scheme: light;
+    --color-ink: #fbf3ea;
+    --color-surface: #ffffff;
+    --color-surface-2: #fbeede;
+    --color-surface-3: #f3e0cb;
+    --color-line: #e7d4bf;
+    --color-fg: #2a2018;
+    --color-muted: #7c6a58;
+    --color-faint: #ab9a86;
+    --color-solo-300: #f0a868;
+    --color-solo-400: #e8893d;
+    --color-solo-500: #d9742a;
+    --color-solo-600: #bb5f1d;
+    --color-accent: #ffc08a;
+  }
+
+  /* Middag — helder, fris daglicht (light) */
+  [data-theme='middag'] {
+    color-scheme: light;
+    --color-ink: #eef3f8;
+    --color-surface: #ffffff;
+    --color-surface-2: #e7eef6;
+    --color-surface-3: #d8e3ef;
+    --color-line: #c6d4e3;
+    --color-fg: #14202c;
+    --color-muted: #5a6b7d;
+    --color-faint: #8d9eae;
+    --color-solo-300: #4aa3e8;
+    --color-solo-400: #2486d6;
+    --color-solo-500: #176fbb;
+    --color-solo-600: #0f599b;
+    --color-accent: #6cc0ff;
+  }
+
+  /* Avond — warme schemering (dark) */
+  [data-theme='avond'] {
+    --color-ink: #14100f;
+    --color-surface: #1d1715;
+    --color-surface-2: #271d1a;
+    --color-surface-3: #342621;
+    --color-line: #44322b;
+    --color-fg: #f1e6df;
+    --color-muted: #b09a8e;
+    --color-faint: #7a665c;
+    --color-solo-300: #ffb27a;
+    --color-solo-400: #ff8f4d;
+    --color-solo-500: #f0742f;
+    --color-solo-600: #d35d1c;
+    --color-accent: #ffcaa0;
+    --color-calm: #d99b6c;
+  }
+
+  /* Nacht — diep donker, rustig (dark, default) */
+  [data-theme='nacht'] {
+    --color-ink: #06080f;
+    --color-surface: #0c1018;
+    --color-surface-2: #121826;
+    --color-surface-3: #1a2230;
+    --color-line: #243044;
+    --color-solo-300: #9bc0ff;
+    --color-solo-400: #6b9fff;
+    --color-solo-500: #4f86ee;
+    --color-solo-600: #3a6fd6;
+    --color-accent: #8fb6ff;
+  }
+
   html,
   body,
   #root {
@@ -101,5 +169,123 @@
     text-transform: uppercase;
     letter-spacing: 0.08em;
     font-size: 0.7rem;
+  }
+
+  /* TV dashboard animations */
+  .tv-anim-lift {
+    animation: tv-lift 2.4s ease-in-out infinite;
+  }
+  .tv-anim-pulse {
+    animation: tv-pulse 1.6s ease-in-out infinite;
+  }
+  .tv-anim-breathe {
+    animation: tv-breathe 3.2s ease-in-out infinite;
+  }
+  .tv-anim-scan {
+    animation: tv-scan 2.8s linear infinite;
+  }
+
+  .tv-effect-screamer,
+  .tv-effect-midline,
+  .tv-effect-ambient {
+    /* legacy — bursts only, no continuous motion */
+  }
+
+  .tv-burst-shake-screamer {
+    animation: tv-shake 0.12s ease-in-out 4;
+  }
+  .tv-burst-shake-mid {
+    animation: tv-shake 0.1s ease-in-out 3;
+  }
+  .tv-burst-glow-warn {
+    animation: tv-burst-flash-warn 0.55s ease-out 1;
+  }
+  .tv-burst-glow-calm {
+    animation: tv-burst-flash-calm 0.7s ease-out 1;
+  }
+}
+
+@keyframes tv-lift {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8%);
+  }
+}
+
+@keyframes tv-pulse {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes tv-breathe {
+  0%,
+  100% {
+    transform: scale(0.95);
+    opacity: 0.75;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 1;
+  }
+}
+
+@keyframes tv-scan {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  30% {
+    opacity: 0.4;
+  }
+  100% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+}
+
+@keyframes tv-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+
+@keyframes tv-burst-flash-warn {
+  0% {
+    filter: brightness(1);
+  }
+  30% {
+    filter: brightness(1.15) saturate(1.2);
+  }
+  100% {
+    filter: brightness(1);
+  }
+}
+
+@keyframes tv-burst-flash-calm {
+  0% {
+    filter: brightness(1);
+  }
+  40% {
+    filter: brightness(1.08) saturate(1.1);
+  }
+  100% {
+    filter: brightness(1);
   }
 }

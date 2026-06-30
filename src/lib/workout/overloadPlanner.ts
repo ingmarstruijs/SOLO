@@ -48,15 +48,30 @@ export function planOverloadTargets(
       reason: reasons.join(' · ') || undefined,
       plateConfig:
         adjusted > 0 ? configurePlates(adjusted, lockerItems, ex.equipment) : undefined,
-    }  })
+    }
+  })
 }
 
-export function estimateExerciseMinutes(ex: WorkoutExercise): number {
-  const workSeconds = ex.metric === 'time' ? ex.target * ex.sets : ex.sets * ex.target * 3
-  const restSeconds = ex.restSeconds * Math.max(0, ex.sets - 1)
+export function estimateExerciseMinutes(ex: WorkoutExercise, workoutSets: number): number {
+  const workSeconds =
+    ex.metric === 'time'
+      ? ex.target * workoutSets
+      : ex.metric === 'distance'
+        ? workoutSets * Math.max(60, ex.target * 0.3)
+        : workoutSets * ex.target * 3
+  const intraRest = (ex.restAfterReps ?? 0) * Math.max(0, workoutSets - 1)
+  const restSeconds = ex.restSeconds * Math.max(0, workoutSets - 1) + intraRest
   return Math.ceil((workSeconds + restSeconds) / 60)
 }
 
-export function recalcWorkoutDuration(exercises: WorkoutExercise[]): number {
-  return exercises.reduce((sum, ex) => sum + estimateExerciseMinutes(ex), 0)
+export function recalcWorkoutDuration(
+  exercises: WorkoutExercise[],
+  workoutSets: number,
+  circuitRounds = 1,
+  restBetweenRounds = 0,
+): number {
+  const base = exercises.reduce((sum, ex) => sum + estimateExerciseMinutes(ex, workoutSets), 0)
+  const rounds = Math.max(1, circuitRounds)
+  const between = rounds > 1 ? (rounds - 1) * Math.ceil(restBetweenRounds / 60) : 0
+  return base * rounds + between
 }

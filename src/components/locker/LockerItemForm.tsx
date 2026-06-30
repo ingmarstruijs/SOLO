@@ -1,7 +1,10 @@
+import { Globe } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import type { EquipmentCategory, LockerItem } from '@/types/locker'
 import { EQUIPMENT_CATALOG } from '@/lib/locker/equipmentCatalog'
+import { parseSmartImport } from '@/lib/locker/smartImport'
 import { LabActionButton } from '@/components/lab/LabPrimitives'
+import { cn } from '@/lib/cn'
 
 type LockerItemFormProps = {
   initial?: Partial<LockerItem>
@@ -10,6 +13,7 @@ type LockerItemFormProps = {
 }
 
 export function LockerItemForm({ initial, onSave, onCancel }: LockerItemFormProps) {
+  const isNew = !initial?.id
   const [name, setName] = useState(initial?.name ?? '')
   const [brand, setBrand] = useState(initial?.brand ?? '')
   const [category, setCategory] = useState<EquipmentCategory>(initial?.category ?? 'dumbbell')
@@ -19,8 +23,20 @@ export function LockerItemForm({ initial, onSave, onCancel }: LockerItemFormProp
     initial?.firstUsedAt ?? new Date().toISOString().slice(0, 10),
   )
   const [notes, setNotes] = useState(initial?.notes ?? '')
+  const [importUrl, setImportUrl] = useState('')
+  const [importPaste, setImportPaste] = useState('')
+  const [importConfidence, setImportConfidence] = useState<'high' | 'medium' | 'low' | null>(null)
 
   const meta = EQUIPMENT_CATALOG.find((e) => e.category === category)!
+
+  function applySmartImport() {
+    const draft = parseSmartImport(importPaste || importUrl, importUrl)
+    setName(draft.name)
+    setBrand(draft.brand)
+    setCategory(draft.category)
+    setWeightKg(draft.weightKg?.toString() ?? '')
+    setImportConfidence(draft.confidence)
+  }
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -38,6 +54,45 @@ export function LockerItemForm({ initial, onSave, onCancel }: LockerItemFormProp
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+      {isNew && (
+        <div className="rounded-card border border-solo-400/30 bg-surface-2 p-3">
+          <div className="mb-2 flex items-center gap-2">
+            <Globe className="size-4 text-solo-400" />
+            <p className="text-sm font-semibold">Smart import</p>
+          </div>
+          <p className="mb-3 text-xs text-muted">
+            Plak een product-URL of webshop-tekst. Velden hieronder worden automatisch ingevuld.
+          </p>
+          <div className="flex flex-col gap-2">
+            <input
+              value={importUrl}
+              onChange={(e) => setImportUrl(e.target.value)}
+              placeholder="https://…"
+              className={inputClass}
+            />
+            <textarea
+              value={importPaste}
+              onChange={(e) => setImportPaste(e.target.value)}
+              placeholder="Of plak pagina-inhoud / producttitel…"
+              rows={2}
+              className={inputClass}
+            />
+            <LabActionButton
+              variant="secondary"
+              onClick={applySmartImport}
+              disabled={!importUrl.trim() && !importPaste.trim()}
+            >
+              Analyseren
+            </LabActionButton>
+            {importConfidence && (
+              <p className={cn('label-mono text-[10px]', confidenceColor(importConfidence))}>
+                Velden ingevuld · betrouwbaarheid {importConfidence}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       <Field label="Naam">
         <input
           value={name}
@@ -58,7 +113,11 @@ export function LockerItemForm({ initial, onSave, onCancel }: LockerItemFormProp
       </Field>
 
       <Field label="Type">
-        <select value={category} onChange={(e) => setCategory(e.target.value as EquipmentCategory)} className={inputClass}>
+        <select
+          value={category}
+          onChange={(e) => setCategory(e.target.value as EquipmentCategory)}
+          className={inputClass}
+        >
           {EQUIPMENT_CATALOG.map((e) => (
             <option key={e.category} value={e.category}>
               {e.labelNl}
@@ -125,6 +184,12 @@ export function LockerItemForm({ initial, onSave, onCancel }: LockerItemFormProp
       </div>
     </form>
   )
+}
+
+function confidenceColor(c: 'high' | 'medium' | 'low'): string {
+  if (c === 'high') return 'text-success'
+  if (c === 'medium') return 'text-warn'
+  return 'text-danger'
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {

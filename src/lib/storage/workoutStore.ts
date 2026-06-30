@@ -1,7 +1,25 @@
 import type { WorkoutExport, WorkoutTemplate } from '@/types/workout'
+import { migrateWorkout, type LegacyWorkout } from '@/lib/workout/migrateWorkout'
 import { createId, readStore, subscribeStore, writeStore } from './localStore'
 
 const KEY = 'solo-workouts'
+const SEEDED_KEY = 'solo-workouts-seeded'
+
+function hasSeeded(): boolean {
+  try {
+    return localStorage.getItem(SEEDED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function markSeeded(): void {
+  try {
+    localStorage.setItem(SEEDED_KEY, '1')
+  } catch {
+    // ignore
+  }
+}
 
 const SEED_WORKOUTS: WorkoutTemplate[] = [
   {
@@ -12,13 +30,14 @@ const SEED_WORKOUTS: WorkoutTemplate[] = [
     source: 'manual',
     estimatedMinutes: 35,
     tags: ['push', 'upper'],
+    sets: 4,
+    restBetweenSets: 90,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     exercises: [
       {
         id: 'ex-1',
         name: 'Dumbbell Bench Press',
-        sets: 4,
         metric: 'reps',
         target: 10,
         weightKg: 20,
@@ -28,7 +47,6 @@ const SEED_WORKOUTS: WorkoutTemplate[] = [
       {
         id: 'ex-2',
         name: 'Overhead Press',
-        sets: 3,
         metric: 'reps',
         target: 12,
         weightKg: 14,
@@ -38,7 +56,6 @@ const SEED_WORKOUTS: WorkoutTemplate[] = [
       {
         id: 'ex-3',
         name: 'Triceps Extension',
-        sets: 3,
         metric: 'reps',
         target: 15,
         weightKg: 10,
@@ -55,13 +72,16 @@ const SEED_WORKOUTS: WorkoutTemplate[] = [
     source: 'manual',
     estimatedMinutes: 25,
     tags: ['circuit', 'full-body'],
+    sets: 1,
+    restBetweenSets: 0,
+    circuitRounds: 3,
+    restBetweenRounds: 60,
     createdAt: '2026-01-01T00:00:00.000Z',
     updatedAt: '2026-01-01T00:00:00.000Z',
     exercises: [
       {
         id: 'ex-4',
         name: 'Kettlebell Swing',
-        sets: 4,
         metric: 'reps',
         target: 15,
         weightKg: 16,
@@ -71,7 +91,6 @@ const SEED_WORKOUTS: WorkoutTemplate[] = [
       {
         id: 'ex-5',
         name: 'Band Row',
-        sets: 3,
         metric: 'reps',
         target: 20,
         weightKg: 0,
@@ -81,7 +100,6 @@ const SEED_WORKOUTS: WorkoutTemplate[] = [
       {
         id: 'ex-6',
         name: 'Goblet Squat',
-        sets: 3,
         metric: 'reps',
         target: 12,
         weightKg: 16,
@@ -93,13 +111,45 @@ const SEED_WORKOUTS: WorkoutTemplate[] = [
 ]
 
 function ensureSeed(): WorkoutTemplate[] {
-  const existing = readStore<WorkoutTemplate[]>(KEY, [])
+  const existing = readStore<LegacyWorkout[]>(KEY, [])
   if (existing.length === 0) {
+    // Only seed the example workouts once. After the user has deleted them all,
+    // the seeded marker prevents them from reappearing.
+    if (hasSeeded()) return readStore<WorkoutTemplate[]>(KEY, [])
     writeStore(KEY, SEED_WORKOUTS)
+    markSeeded()
     // Re-read so we return the cached (stable) reference rather than the seed constant.
     return readStore<WorkoutTemplate[]>(KEY, [])
   }
-  return existing
+
+  markSeeded()
+
+  // Migrate legacy workouts (sets/audio per exercise) once and persist so the
+  // snapshot reference stays stable for useSyncExternalStore.
+  const needsMigration = existing.some(
+    (w) =>
+      typeof w.sets !== 'number' ||
+      typeof w.restBetweenSets !== 'number' ||
+      w.exercises.some((e) => 'sets' in e || 'audioNote' in e || 'audioNoteText' in e) ||
+      (w.tags.includes('circuit') && (w.circuitRounds ?? 1) <= 1 && (w.sets ?? 1) > 1),
+  )
+  if (needsMigration) {
+    const migrated = existing
+      .map(migrateWorkout)
+      .map((w) =>
+        w.tags.includes('circuit') && (w.circuitRounds ?? 1) <= 1 && w.sets > 1
+          ? {
+              ...w,
+              circuitRounds: w.sets,
+              sets: 1,
+              restBetweenRounds: w.restBetweenSets,
+              restBetweenSets: 0,
+            }
+          : w,
+      )
+    writeStore(KEY, migrated)
+  }
+  return readStore<WorkoutTemplate[]>(KEY, [])
 }
 
 export function getWorkouts(): WorkoutTemplate[] {

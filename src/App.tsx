@@ -13,9 +13,11 @@ import { LockerPage } from '@/pages/LockerPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 import { PoseLabPage } from '@/pages/PoseLabPage'
 import { SessionPage } from '@/pages/SessionPage'
+import { SessionSummaryPage } from '@/pages/SessionSummaryPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { TvPage } from '@/pages/TvPage'
 import { WorkoutEditorPage } from '@/pages/WorkoutEditorPage'
+import { WorkoutPrepPage } from '@/pages/WorkoutPrepPage'
 import { WorkoutsPage } from '@/pages/WorkoutsPage'
 
 export function App() {
@@ -30,10 +32,13 @@ export function App() {
           <Route index element={<HomePage />} />
           <Route path="workouts" element={<WorkoutsPage />} />
           <Route path="workouts/new" element={<WorkoutEditorPage />} />
+          <Route path="workouts/prep" element={<WorkoutPrepPage />} />
           <Route path="workouts/:id/edit" element={<WorkoutEditorPage />} />
           <Route path="locker" element={<LockerPage />} />
           <Route path="history" element={<HistoryPage />} />
+          <Route path="history/:sessionId" element={<SessionSummaryPage />} />
           <Route path="session" element={<SessionPage />} />
+          <Route path="session/summary" element={<SessionSummaryPage />} />
           <Route path="lab" element={<LabHubPage />} />
           <Route path="lab/active-set" element={<ActiveSetLabPage />} />
           <Route path="lab/garmin-sync" element={<GarminFeasibilityPage />} />
